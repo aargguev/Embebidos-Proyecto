@@ -13,12 +13,25 @@
 const char* ssid = "CLARO_FAMILY_GT";//CAMBIAR
 const char* password = "MIDORISAIKA13";//CAMBIAR
 const char* mqtt_server = "broker.emqx.io";
+String rfid_copy = "";
 char nombre[50];
 char saldodb[50];
+String valuename;
+String valuesaldo;
+float valsaldo;
 bool nombreRecibido = false; 
 bool saldoRecibido = false; 
 bool esperandoRespuesta = false;
 bool aprobacion = false;
+bool esperandoSaldo = false;
+unsigned long tiempoInicioEspera = 0;
+const unsigned long tiempoMaxEspera = 5000; 
+unsigned long startWaitTime;
+bool isWaitingForResponse = false;
+const unsigned long waitTimeout = 10000; 
+
+
+
 boolean indetificadorAprobado = false;
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -56,7 +69,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println(topic);
   //Serial.print("Mensaje: ");
 
-  if(strcmp(topic, "inNombre") == 0){
+  if(strcmp(topic, "inName") == 0){
    memset(nombre, 0, sizeof(nombre));
    memcpy(nombre, payload, length);
    //Serial.println(nombre);
@@ -84,7 +97,7 @@ void reconnect() {
       // Once connected, publish an announcement...
       client.publish("esp32/rfid", "hello world");
       // ... and resubscribe
-      client.subscribe("inNombre");
+      client.subscribe("inName");
       client.subscribe("inSaldo");
     } else {
       Serial.print("failed, rc=");
@@ -464,30 +477,76 @@ void juego() {
 
   switch (aciertos) {
     case 0:
-      incremento = 0.0;
+      if (client.connected()) {
+      int aciertospu= 0;
+      incremento = 0;
+      String rfid_code = rfid_copy;
+      String payload = rfid_code+","+aciertospu;
+      snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
+      Serial.print("Publish message: ");
+      Serial.println(msg);
+      client.publish("esp32/aciertos", msg);
+      valsaldo=valsaldo+0.0;
+    }
       break;
 
     case 1:
+       if (client.connected()) {
+      int aciertospu= 1;
       incremento = 0.5;
-      saldo = saldo + incremento;
+      String rfid_code = rfid_copy;
+      String payload = rfid_code+","+aciertospu;
+      snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
+      Serial.print("Publish message: ");
+      Serial.println(msg);
+      client.publish("esp32/aciertos", msg);
+      valsaldo=valsaldo+0.5;
+    }
 
       break;
 
     case 2:
-      incremento = 0.5;
-      saldo = saldo + incremento;
+       if (client.connected()) {
+      int aciertospu= 2;
+      incremento = 1.5;
+      String rfid_code = rfid_copy;
+      String payload = rfid_code+","+aciertospu;
+      snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
+      Serial.print("Publish message: ");
+      Serial.println(msg);
+      client.publish("esp32/aciertos", msg);
+      valsaldo=valsaldo+1.5;
+    }
       
       break;
     
     case 3:
+       if (client.connected()) {
+      int aciertospu= 3;
       incremento = 1.5;
-      saldo = saldo + incremento;
+      String rfid_code = rfid_copy;
+      String payload = rfid_code+","+aciertospu;
+      snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
+      Serial.print("Publish message: ");
+      Serial.println(msg);
+      client.publish("esp32/aciertos", msg);
+      valsaldo=valsaldo+1.5;
+    }
       
       break;
     
     case 4:
-      incremento = 2;
-      saldo = saldo + incremento;
+       if (client.connected()) {
+      int aciertospu= 4;
+      incremento = 2.0;
+      String rfid_code = rfid_copy;
+      String payload = rfid_code+","+aciertospu;
+      snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
+      Serial.print("Publish message: ");
+      Serial.println(msg);
+      client.publish("esp32/aciertos", msg);
+      valsaldo=valsaldo+2;
+    }
       
       break;
 
@@ -609,21 +668,33 @@ void loop(){
     Serial.print("\t");   			// imprime un espacio de tabulacion   
 
   //====================== Comparamos que el usuario se encuentre en la base de datos ======================   
-  if (!esperandoRespuesta && client.connected()) {
-    // Realiza la publicación para solicitar el nombre
+if (!esperandoRespuesta && client.connected()) {
     String rfid_code = bytesToHexString(LecturaUID, sizeof(LecturaUID) / sizeof(LecturaUID[0]));
+    rfid_copy = rfid_code;
     String payload = rfid_code;
     snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
-    Serial.print("Publish message: ");
-    Serial.println(msg);
     client.publish("esp32/nombre", msg);
-    esperandoRespuesta = true;  // Ahora estamos esperando una respuesta
-  }
+    esperandoRespuesta = true;
+    startWaitTime = millis();
+}
 
   // Si el nombre ha sido recibido y estábamos esperando una respuesta
-  if (nombreRecibido && esperandoRespuesta) {
+  if (esperandoRespuesta) {
+    if (millis() - startWaitTime > waitTimeout) {
+        // El tiempo de espera se ha agotado
+        esperandoRespuesta = false;
+        // Manejar el timeout aquí, por ejemplo, volver a intentar o mostrar un mensaje de error
+    }
+    else if (nombreRecibido) {
     Serial.print("nombre recibido: ");
     Serial.println(nombre);
+    String str = nombre;
+    int index = str.indexOf(',');
+    valuename= str.substring(0,index);
+    valuesaldo = str.substring(index+1);
+    valsaldo=valuesaldo.toFloat();
+    Serial.println(valuename);
+    Serial.println(valuesaldo);
     nombreRecibido = false;     // Resetea el flag para el próximo uso
     esperandoRespuesta = false; // Ya no estamos esperando una respuesta
                 // Cambia o restablece la consulta según sea necesario
@@ -632,7 +703,11 @@ void loop(){
       lcd.setCursor(0, 1);
       lcd.print("=====Bienvenid@=====");
       lcd.setCursor(0, 2);
-      lcd.print(nombre);
+      lcd.print("===");
+      lcd.setCursor(5, 2);
+      lcd.print(valuename);
+      lcd.setCursor(15, 2);
+      lcd.print("===");
       delay(2000);
       saldo = 0.0;
       indetificadorAprobado = true;
@@ -645,6 +720,7 @@ void loop(){
       lcd.print("XXXX DESCONOCIDO XXX");
       delay(2000);
             indetificadorAprobado = false;
+    }
     }
   } 
  /* String user;
@@ -735,7 +811,7 @@ if (aprobacion) {	// llama a funcion comparaUID con Usuario1
     updateMenu(currentPosition);
 
     delay(100);  // Puedes ajustar el retardo principal según tus 
-    
+    bool saldos=false;
     if ( lecPush == LOW) {
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -743,92 +819,101 @@ if (aprobacion) {	// llama a funcion comparaUID con Usuario1
       switch (opcion) {
         case 0:
 
-          if (saldo>=0.50){
+            if (valsaldo >=0.50){
 
           //====================== Interfaz de Inicialización ======================
 
-            lcd.setCursor(6, 1);
-            lcd.print("Iniciando");
-            lcd.setCursor(7, 2);
-            lcd.print("Juego.");
-            lcd.setCursor(6, 3);
-            lcd.print("- $");
-            lcd.setCursor(9, 3);
-            lcd.print("0.50");
-            delay(1000);
-            lcd.setCursor(7, 2);
-            lcd.print("Juego..");
-            delay(1000);
-            lcd.setCursor(7, 2);
-            lcd.print("Juego...");
-            delay(1000);
+              lcd.setCursor(6, 1);
+              lcd.print("Iniciando");
+              lcd.setCursor(7, 2);
+              lcd.print("Juego.");
+              lcd.setCursor(6, 3);
+              lcd.print("- $");
+              lcd.setCursor(9, 3);
+              lcd.print("0.50");
+              delay(1000);
+              lcd.setCursor(7, 2);
+              lcd.print("Juego..");
+              delay(1000);
+              lcd.setCursor(7, 2);
+              lcd.print("Juego...");
+              delay(1000);
 
-          //====================== Iniciamos los 3 intentos del usuario ======================
+            //====================== Iniciamos los 3 intentos del usuario ======================
 
-            saldo = saldo - 0.50;
-            for(int intento = 0; intento<3+intentoExtra; ++intento){
+              valsaldo = valsaldo - 0.50;
+              //jugar disminuir saldo
+              if (client.connected()) {
+                String rfid_code = rfid_copy;
+                String payload = rfid_code;
+                snprintf(msg, MSG_BUFFER_SIZE, payload.c_str());
+                Serial.print("Publish message: ");
+                Serial.println(msg);
+                client.publish("esp32/jugar", msg);
+            }
+              for(int intento = 0; intento<3+intentoExtra; ++intento){
 
-              lcd.clear();
-              lcd.setCursor(2, 1);
-              lcd.print("Juego en Curso");
-              lcd.setCursor(5, 2);
-              lcd.print("Intento:");
-              lcd.setCursor(14, 2);
-              lcd.print(intento+1);
+                lcd.clear();
+                lcd.setCursor(2, 1);
+                lcd.print("Juego en Curso");
+                lcd.setCursor(5, 2);
+                lcd.print("Intento:");
+                lcd.setCursor(14, 2);
+                lcd.print(intento+1);
 
-            //====================== Damos paso al juego de LED's ======================
+              //====================== Damos paso al juego de LED's ======================
 
-              pixels.setPixelColor(0, azul); //Indicador de que el juego ha empezado
-              pixels.show(); 
-              juego();
+                pixels.setPixelColor(0, azul); //Indicador de que el juego ha empezado
+                pixels.show(); 
+                juego();
 
-            //====================== Interfaz de Finalización ======================
+              //====================== Interfaz de Finalización ======================
+                lcd.clear();
+                lcd.setCursor(4, 1);
+                lcd.print("Juego Acabado");
+                lcd.setCursor(3, 2);
+                lcd.print("Aciertos:");
+                lcd.setCursor(14, 2);
+                lcd.print(aciertos);
+                lcd.setCursor(6, 3);
+                lcd.print("+ $");
+                lcd.setCursor(9, 3);
+                lcd.print(incremento);
+                delay(5000);
+
+              //====================== Apagamos los LED's ======================
+                for (int e = 0; e < NUMPIXELS; ++e){
+                  pixels.setPixelColor(e, nada);
+                  pixels.show(); 
+                }
+              
+              //====================== Adicionar un intento si en su ultimo juego tuvo al menos un acierto ======================
+                if(intento >= 2 && aciertos!=0){
+                  lcd.clear();
+                  lcd.setCursor(5, 1);
+                  lcd.print("Ganaste un");
+                  lcd.setCursor(5, 2);
+                  lcd.print("Intento!!!");
+                  delay(5000);
+                  intentoExtra++;
+              }
+
+              }
+
+            //====================== Interfaz de Reinicio ======================
+
               lcd.clear();
               lcd.setCursor(4, 1);
-              lcd.print("Juego Acabado");
-              lcd.setCursor(3, 2);
-              lcd.print("Aciertos:");
-              lcd.setCursor(14, 2);
-              lcd.print(aciertos);
-              lcd.setCursor(6, 3);
-              lcd.print("+ $");
-              lcd.setCursor(9, 3);
-              lcd.print(incremento);
-              delay(5000);
-
-            //====================== Apagamos los LED's ======================
-              for (int e = 0; e < NUMPIXELS; ++e){
-                pixels.setPixelColor(e, nada);
-                pixels.show(); 
-              }
-            
-            //====================== Adicionar un intento si en su ultimo juego tuvo al menos un acierto ======================
-              if(intento >= 2 && aciertos!=0){
-                lcd.clear();
-                lcd.setCursor(5, 1);
-                lcd.print("Ganaste un");
-                lcd.setCursor(5, 2);
-                lcd.print("Intento!!!");
-                delay(5000);
-                intentoExtra++;
-              }
-
-            }
-
-          //====================== Interfaz de Reinicio ======================
-
-            lcd.clear();
-            lcd.setCursor(4, 1);
-            lcd.print("Reiniciando");
-            lcd.setCursor(6, 2);
-            lcd.print("Juego.");
-            delay(1000);
-            lcd.setCursor(6, 2);
-            lcd.print("Juego..");
-            delay(1000);
-            lcd.setCursor(6, 2);
-            lcd.print("Juego...");
-            delay(1000);
+              lcd.print("Reiniciando");
+              lcd.setCursor(6, 2);
+              lcd.print("Juego.");
+              delay(1000);
+              lcd.setCursor(6, 2);
+              lcd.print("Juego..");
+              delay(1000);
+              lcd.setCursor(6, 2);
+              lcd.print("Juego...");
+              delay(1000);
 
           }
 
@@ -851,14 +936,13 @@ if (aprobacion) {	// llama a funcion comparaUID con Usuario1
           }
 
           break;
-
         case 1:
           lcd.setCursor(7, 1);
           lcd.print("Saldo:");
           lcd.setCursor(7, 2);
           lcd.print("$");
           lcd.setCursor(8, 2);
-          lcd.print(saldo);
+          lcd.print(valsaldo);
           delay(2000);
           //indetificadorAprobado = false;
           break;
